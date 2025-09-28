@@ -1,0 +1,4 @@
+__pycache__/
+.venv/
+sample_data/index/
+sample_data/uploads/

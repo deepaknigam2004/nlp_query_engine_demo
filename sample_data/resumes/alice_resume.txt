@@ -1,0 +1,1 @@
+Alice Johnson\nSkills: Python, Machine Learning, SQL\nExperience: 8 years in backend systems and ML pipelines.

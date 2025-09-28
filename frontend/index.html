@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>NLP Query Engine - Demo</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; max-width: 1000px; }
+    input, button, textarea { font-size: 14px; padding: 8px; }
+    .panel { border: 1px solid #ddd; padding: 12px; margin-bottom: 12px; border-radius: 6px; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #ccc; padding: 6px; text-align: left; }
+    .card { border: 1px solid #eee; padding: 10px; margin: 8px 0; border-radius: 6px; }
+  </style>
+</head>
+<body>
+  <h1>NLP Query Engine - Demo</h1>
+
+  <div class="panel">
+    <h3>1) Connect to database</h3>
+    <input id="conn" style="width:70%" value="sqlite:///./sample_data/sample.db" />
+    <button id="btnConnect">Connect & Discover Schema</button>
+    <pre id="schemaOut"></pre>
+  </div>
+
+  <div class="panel">
+    <h3>2) Upload documents (txt/csv)</h3>
+    <input id="files" type="file" multiple />
+    <button id="btnUpload">Upload & Process</button>
+    <div id="uploadStatus"></div>
+  </div>
+
+  <div class="panel">
+    <h3>3) Query (Natural language)</h3>
+    <input id="queryInput" style="width:70%" placeholder='e.g. "How many employees do we have?" or "Show me Python developers"' />
+    <button id="btnQuery">Run Query</button>
+    <div id="queryMeta"></div>
+    <div id="results"></div>
+  </div>
+
+  <script>
+    const schemaOut = document.getElementById('schemaOut');
+    document.getElementById('btnConnect').onclick = async () => {
+      const conn = document.getElementById('conn').value;
+      const data = new FormData();
+      data.append('connection_string', conn);
+      schemaOut.textContent = 'Discovering...';
+      const res = await fetch('/api/ingest/database', {method: 'POST', body: data});
+      const j = await res.json();
+      schemaOut.textContent = JSON.stringify(j, null, 2);
+    };
+
+    document.getElementById('btnUpload').onclick = async () => {
+      const inp = document.getElementById('files');
+      if (!inp.files.length) return alert('Select files first');
+      const data = new FormData();
+      for (let f of inp.files) data.append('files', f);
+      document.getElementById('uploadStatus').textContent = 'Uploading...';
+      const res = await fetch('/api/ingest/documents', {method: 'POST', body: data});
+      const j = await res.json();
+      document.getElementById('uploadStatus').textContent = JSON.stringify(j);
+    };
+
+    document.getElementById('btnQuery').onclick = async () => {
+      const q = document.getElementById('queryInput').value;
+      if (!q) return alert('Enter a query');
+      document.getElementById('results').innerHTML = '<em>Running...</em>';
+      const res = await fetch('/api/query', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({query: q, connection_string: document.getElementById('conn').value})
+      });
+      const j = await res.json();
+      document.getElementById('queryMeta').textContent = JSON.stringify({type: j.query_type, time_ms: j.time_ms, sources: j.sources}, null, 2);
+      const rdiv = document.getElementById('results');
+      rdiv.innerHTML = '';
+      if (j.query_type === 'sql' && j.results) {
+        if (j.results.length === 0) rdiv.innerHTML = '<div class="card">No rows</div>';
+        else {
+          const table = document.createElement('table');
+          const thead = document.createElement('thead');
+          const hdr = Object.keys(j.results[0]);
+          thead.innerHTML = '<tr>' + hdr.map(h => `<th>${h}</th>`).join('') + '</tr>';
+          table.appendChild(thead);
+          const tbody = document.createElement('tbody');
+          for (let row of j.results) {
+            const tr = document.createElement('tr');
+            for (let h of hdr) tr.innerHTML += `<td>${row[h] ?? ''}</td>`;
+            tbody.appendChild(tr);
+          }
+          table.appendChild(tbody);
+          rdiv.appendChild(table);
+        }
+      } else if ((j.query_type === 'document' || j.query_type === 'fallback_document') && j.results) {
+        for (let doc of j.results) {
+          const c = document.createElement('div');
+          c.className = 'card';
+          c.innerHTML = `<strong>${doc.filename}</strong> (score: ${doc.score.toFixed(3)})<pre>${doc.snippet}</pre>`;
+          rdiv.appendChild(c);
+        }
+      } else if (j.error) {
+        rdiv.innerHTML = '<pre style="color:red">' + j.error + '</pre>';
+      } else {
+        rdiv.innerHTML = '<pre>' + JSON.stringify(j, null, 2) + '</pre>';
+      }
+    };
+  </script>
+</body>
+</html>
